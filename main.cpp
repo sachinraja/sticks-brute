@@ -80,6 +80,10 @@ struct NodeHasher {
     }
 };
 
+int max(int a, int b) {
+  return a > b ? a : b;
+}
+
 std::vector<Node> get_next_nodes(Node node) {
   std::vector<Node> next_nodes;
 
@@ -103,6 +107,7 @@ std::vector<Node> get_next_nodes(Node node) {
       next_node.players[node.turn] = current_player;
       next_node.players[next_turn] = Player(next_player.hands[other_hand], next_hand);
       next_node.turn = next_turn;
+
       next_nodes.push_back(next_node);
     }
   }
@@ -110,8 +115,9 @@ std::vector<Node> get_next_nodes(Node node) {
   // can split hands
   int* hands = current_player.hands;
   int total_hand = current_player.total_hand();
-  for (int i = 0; i <= total_hand / 2; i++) {
-    if (i == hands[1] || total_hand - i >= 5) continue;
+  // max(0, total_hand - 4) because you cannot split and kill your own hand
+  for (int i = max(0, total_hand - 4); i <= total_hand / 2; i++) {
+    if (i == hands[1]) continue;
   
     Player player(total_hand - i, i);
     Node next_node;
@@ -131,12 +137,12 @@ NodeState get_node_state(Node node, std::unordered_map<Node, NodeState, NodeHash
   auto insert_it = node_state_map.insert(std::make_pair(node, DRAW));
 
   if (node.players[0].total_hand() == 0) {
-    insert_it.second = POSSIBLE_LOSS;
+    insert_it.first->second = POSSIBLE_LOSS;
     return POSSIBLE_LOSS;
   }
 
   if (node.players[1].total_hand() == 0) {
-    insert_it.second = GUARANTEED_WIN;
+    insert_it.first->second = GUARANTEED_WIN;
     return GUARANTEED_WIN;
   }
   
@@ -147,13 +153,13 @@ NodeState get_node_state(Node node, std::unordered_map<Node, NodeState, NodeHash
 
     // need to be able to win for all the second player's possible moves
     if (node_state == POSSIBLE_LOSS && node.turn == 1) {
-      insert_it.second = POSSIBLE_LOSS;
+      insert_it.first->second = POSSIBLE_LOSS;
       return POSSIBLE_LOSS;
     }
   
     // need to be able to win for just one of the first player's possible moves
     if (node_state == GUARANTEED_WIN && node.turn == 0) {
-      insert_it.second = GUARANTEED_WIN;
+      insert_it.first->second = GUARANTEED_WIN;
       return GUARANTEED_WIN;
     }
   }
@@ -162,18 +168,40 @@ NodeState get_node_state(Node node, std::unordered_map<Node, NodeState, NodeHash
   // haven't found a guaranteed win for player 1: it's possible to lose
   // can't possibly lose for any player 2 move: player 1 has a guaranteed win 
   NodeState result = node.turn == 0 ? POSSIBLE_LOSS : GUARANTEED_WIN;
-  insert_it.second = result;
+  insert_it.first->second = result;
   return result;
 }
 
-int main() {
+Node get_win_node(Node node, std::unordered_map<Node, NodeState, NodeHasher>& node_state_map) {
+  std::vector<Node> next_nodes = get_next_nodes(node);
+  node_state_map.insert(std::make_pair(node, DRAW));
+  
+  for (Node next_node : next_nodes) {
+    NodeState node_state = get_node_state(next_node, node_state_map);
+    if (node_state == GUARANTEED_WIN)
+      return next_node;
+  }
+
+  std::cerr << "Could not find a winning node for this state.\n";
+  exit(1);
+}
+
+int main(int __attribute__((unused)) argc, char*argv[]) {
   std::unordered_map<Node, NodeState, NodeHasher> node_state_map;
 
+  int p0hand0 = atoi(argv[1]);
+  int p0hand1 = atoi(argv[2]);
+  int p1hand0 = atoi(argv[3]);
+  int p1hand1 = atoi(argv[4]);
+
   Node start_node = {
-    .players = { Player(1, 1), Player(1, 1) },
+    .players = { Player(p0hand0, p0hand1), Player(p1hand0, p1hand1) },
     .turn = 0
   };
 
+  
   NodeState node_state = get_node_state(start_node, node_state_map);
   std::cout << "final state: " << node_state_to_str(node_state) << "\n";
+  
+  get_win_node(start_node, node_state_map).print();
 }
