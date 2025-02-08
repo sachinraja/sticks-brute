@@ -43,19 +43,22 @@ struct Node {
 };
 
 enum NodeState {
-  CALCULATING,
-  WON,
-  LOST
+  PROCESSING,
+  GUARANTEED_WIN,
+  POSSIBLE_LOSS,
+  DRAW
 };
 
 std::string node_state_to_str(NodeState node_state) {
   switch (node_state) {
-    case CALCULATING:
-      return "calculating";
-    case WON:
-      return "won";
-    case LOST:
-      return "lost";
+    case PROCESSING:
+      return "processing";
+    case GUARANTEED_WIN:
+      return "guaranteed win";
+    case POSSIBLE_LOSS:
+      return "possible loss";
+    case DRAW:
+      return "draw";
   }
   return "invalid";
 }
@@ -84,10 +87,14 @@ std::vector<Node> get_next_nodes(Node node) {
   Player& current_player = node.players[node.turn];
   Player& next_player = node.players[next_turn];
   
-  // can add either hand to either hand of other player (4 possible moves)
+  // can add either hand to either hand of other player
+  // 4 possible moves if a hand is not 0
   for (int i = 0; i < 2; i++) {
+    // cannot add an empty hand to the other player
+    if (current_player.hands[i] == 0) continue;
+
     for (int j = 0; j < 2; j++) {
-      int next_hand = next_player.hands[j] + current_player.hands[i];
+      int next_hand = current_player.hands[i] + next_player.hands[j];
       if (next_hand >= 5) next_hand = 0;
 
       int other_hand = 1 - j;
@@ -121,27 +128,40 @@ std::vector<Node> get_next_nodes(Node node) {
 NodeState get_node_state(Node node, std::unordered_map<Node, NodeState, NodeHasher>& node_state_map) {
   auto it = node_state_map.find(node);
   if (it != node_state_map.end()) return it->second;
-  auto insert_it = node_state_map.insert(std::make_pair(node, CALCULATING));
+  auto insert_it = node_state_map.insert(std::make_pair(node, DRAW));
 
   if (node.players[0].total_hand() == 0) {
-    insert_it.second = LOST;
-    return LOST;
-  }
-  if (node.players[1].total_hand() == 0) {
-    insert_it.second = WON;
-    return WON;
+    insert_it.second = POSSIBLE_LOSS;
+    return POSSIBLE_LOSS;
   }
 
+  if (node.players[1].total_hand() == 0) {
+    insert_it.second = GUARANTEED_WIN;
+    return GUARANTEED_WIN;
+  }
+  
   std::vector<Node> next_nodes = get_next_nodes(node);
+
   for (Node next_node : next_nodes) {
     NodeState node_state = get_node_state(next_node, node_state_map);
-    // ignore if calculating -> no need to calculate again
-    if (node_state == CALCULATING) continue;
-    if (node_state == WON && node.turn == 0) return WON;
-    if (node_state == LOST && node.turn == 1) return LOST;
+
+    // need to be able to win for all the second player's possible moves
+    if (node_state == POSSIBLE_LOSS && node.turn == 1) {
+      insert_it.second = POSSIBLE_LOSS;
+      return POSSIBLE_LOSS;
+    }
+  
+    // need to be able to win for just one of the first player's possible moves
+    if (node_state == GUARANTEED_WIN && node.turn == 0) {
+      insert_it.second = GUARANTEED_WIN;
+      return GUARANTEED_WIN;
+    }
   }
 
-  NodeState result = node.turn == 0 ? LOST : WON;
+  // if we've gone through the entire list of possible next moves and
+  // haven't found a guaranteed win for player 1: it's possible to lose
+  // can't possibly lose for any player 2 move: player 1 has a guaranteed win 
+  NodeState result = node.turn == 0 ? POSSIBLE_LOSS : GUARANTEED_WIN;
   insert_it.second = result;
   return result;
 }
@@ -155,5 +175,5 @@ int main() {
   };
 
   NodeState node_state = get_node_state(start_node, node_state_map);
-  std::cout << node_state_to_str(node_state) << "\n";
+  std::cout << "final state: " << node_state_to_str(node_state) << "\n";
 }
