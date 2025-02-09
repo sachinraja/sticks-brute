@@ -98,6 +98,9 @@ std::vector<Node> get_next_nodes(Node node) {
     if (current_player.hands[i] == 0) continue;
 
     for (int j = 0; j < 2; j++) {
+      // cannot hit an empty hand
+      if (next_player.hands[j] == 0) continue;
+
       int next_hand = current_player.hands[i] + next_player.hands[j];
       if (next_hand >= 5) next_hand = 0;
 
@@ -113,15 +116,14 @@ std::vector<Node> get_next_nodes(Node node) {
   }
 
   // can split hands
-  int* hands = current_player.hands;
   int total_hand = current_player.total_hand();
+
   // max(0, total_hand - 4) because you cannot split and kill your own hand
   for (int i = max(0, total_hand - 4); i <= total_hand / 2; i++) {
-    if (i == hands[1]) continue;
+    if (i == current_player.hands[0] || i == current_player.hands[1]) continue;
   
-    Player player(total_hand - i, i);
     Node next_node;
-    next_node.players[node.turn] = player;
+    next_node.players[node.turn] = Player(total_hand - i, i);
     next_node.players[next_turn] = next_player;
     next_node.turn = next_turn;
 
@@ -152,7 +154,7 @@ NodeState get_node_state(Node node, std::unordered_map<Node, NodeState, NodeHash
     NodeState node_state = get_node_state(next_node, node_state_map);
 
     // need to be able to win for all the second player's possible moves
-    if (node_state == POSSIBLE_LOSS && node.turn == 1) {
+    if (node_state != GUARANTEED_WIN && node.turn == 1) {
       insert_it.first->second = POSSIBLE_LOSS;
       return POSSIBLE_LOSS;
     }
@@ -172,7 +174,7 @@ NodeState get_node_state(Node node, std::unordered_map<Node, NodeState, NodeHash
   return result;
 }
 
-Node get_win_node(Node node, std::unordered_map<Node, NodeState, NodeHasher>& node_state_map) {
+std::optional<Node> get_win_node(Node node, std::unordered_map<Node, NodeState, NodeHasher>& node_state_map) {
   std::vector<Node> next_nodes = get_next_nodes(node);
   node_state_map.insert(std::make_pair(node, DRAW));
   
@@ -182,8 +184,7 @@ Node get_win_node(Node node, std::unordered_map<Node, NodeState, NodeHasher>& no
       return next_node;
   }
 
-  std::cerr << "Could not find a winning node for this state.\n";
-  exit(1);
+  return std::nullopt;
 }
 
 int main(int __attribute__((unused)) argc, char*argv[]) {
@@ -198,10 +199,15 @@ int main(int __attribute__((unused)) argc, char*argv[]) {
     .players = { Player(p0hand0, p0hand1), Player(p1hand0, p1hand1) },
     .turn = 0
   };
-
   
   NodeState node_state = get_node_state(start_node, node_state_map);
   std::cout << "final state: " << node_state_to_str(node_state) << "\n";
   
-  get_win_node(start_node, node_state_map).print();
+  std::optional<Node> optional_win_node = get_win_node(start_node, node_state_map);
+  if (optional_win_node.has_value()) {
+    std::cout << "Found winning move: \n";
+    optional_win_node.value().print();
+  } else {
+    std::cout << "Could not find a winning node for this state.\n";
+  }
 }
